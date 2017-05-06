@@ -20,14 +20,64 @@
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/js/bootstrap.min.js" integrity="sha384-vBWWzlZJ8ea9aCX4pEW3rVHjgjt7zpkNpZk+02D9phzyeVkE+jo0ieGizqPLForn" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/leaflet@1.0.3/dist/leaflet.js" integrity="sha512-A7vV8IFfih/D732iSSKi20u/ooOfj/AGehOKq0f4vLT1Zr2Y+RX7C+w8A1gaSasGtRUZpF/NZgzSAu4/Gc41Lg==" crossorigin=""></script>
     <script type="text/javascript">
+      function heatMapColorForValue(value){
+        var h = (1.0 - value) * 240;
+        return "hsl(" + h + ", 100%, 50%)";
+      }
+    </script>
+    <script type="text/javascript">
       $(function () {
         var map = L.map('map').setView([40, -83], 12);
 
-        jQuery.getJSON('columbus-driving-data-1.json', function (data) {
-          data.drivingData.slice(0, 10000).forEach(function (dataPoint) {
-            L.circle([dataPoint.latitude, dataPoint.longitude], {radius: 10}).addTo(map);
+        var consolidatedData = {};
+        var count = 0;
+
+        function getData(weekday, completeCallback) {
+          console.log('getting data for weekday ' + weekday);
+          jQuery.getJSON('columbus-driving-data-' + weekday + '.json', function (data) {
+            data.drivingData.forEach(function (dataPoint) {
+              count += 1;
+              var roundedLat = parseFloat(dataPoint.latitude).toFixed(4);
+              var roundedLong = parseFloat(dataPoint.longitude).toFixed(4);
+              if (!consolidatedData[roundedLat]) consolidatedData[roundedLat] = {};
+              if (!consolidatedData[roundedLat][roundedLong]) consolidatedData[roundedLat][roundedLong] = { count: 0, speed: 0 };
+
+              var newCount = consolidatedData[roundedLat][roundedLong].count + 1;
+              var newSpeed = ((consolidatedData[roundedLat][roundedLong].speed * (newCount - 1)) + parseFloat(dataPoint.speed)) / newCount;
+              consolidatedData[roundedLat][roundedLong].count = newCount;
+              consolidatedData[roundedLat][roundedLong].speed = newSpeed;
+            });
+            completeCallback();
           });
-        });
+        }
+
+        var weekday = 0;
+        var completeCallback = function () {
+          if (weekday < 6) {
+            weekday += 1;
+            getData(weekday, completeCallback);
+          } else {
+            console.log(count);
+            // console.log(consolidatedData);
+
+            var consolidatedCount = 0;
+            Object.keys(consolidatedData).forEach(function (latitude) {
+              Object.keys(consolidatedData[latitude]).forEach(function (longitude) {
+                var count = consolidatedData[latitude][longitude].count;
+                var speed = consolidatedData[latitude][longitude].speed;
+                consolidatedCount += 1;
+                if (count < 2) return;
+                var ratio = (speed - 20) / 8;
+                if (ratio > 1.0) ratio = 1.0;
+                if (ratio < 0) ratio = NaN;
+                L.circle([latitude, longitude], {radius: 1, color: heatMapColorForValue(ratio)}).addTo(map);
+              });
+            });
+            console.log(consolidatedCount);
+          }
+        };
+
+        getData(weekday, completeCallback);
       });
     </script>
   </body>
